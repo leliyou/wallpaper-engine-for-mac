@@ -1,5 +1,7 @@
 # Wallpaper Engine Prototype
 
+[中文](./README.md) | [English](./README.en.md)
+
 macOS 动态壁纸原型（Apple Silicon）。
 
 ## 1. 环境要求
@@ -35,55 +37,29 @@ xcodebuild -version
 swift --version
 ```
 
-## 3. 项目能力范围（Scope）
-
-- 单屏桌面层视频播放原型
-- 本地 `.mp4` / `.mov` 选择
-- SwiftUI 最小控制面板 + 循环播放
-- AppKit 桌面窗口 + AVFoundation 播放管线
-- 持久化上次视频和播放模式
-- 启动时可自动应用上次视频
-- 显示器目标选择与桌面窗口诊断
-- 内置事件日志（播放/显示器/窗口状态变化）
-- 多视频列表、顺序/随机播放
-- 菜单栏控制、登录启动开关
-- 检测全屏应用时自动暂停/恢复（可选）
-
-## 4. 本地运行
+## 3. 本地运行
 
 ```bash
 swift run
 ```
 
-## 5. 打包流程（从源码到可分发）
+## 4. 打包流程（从源码到可分发）
 
-### 5.1 打包 `.app`
+### 4.1 打包 `.app`
 
 ```bash
 zsh scripts/package_app.sh
 open dist/"Wallpaper Prototype.app"
 ```
 
-脚本会：
-
-- 构建 release 二进制
-- 生成 `dist/Wallpaper Prototype.app`
-- 执行本地 ad-hoc 签名
-- 导出 `dist/Wallpaper-Prototype-macOS.zip`
-
-### 5.2 打包 `.dmg`
+### 4.2 打包 `.dmg`
 
 ```bash
 zsh scripts/package_dmg.sh
 open dist/Wallpaper-Prototype-macOS.dmg
 ```
 
-DMG 内容：
-
-- `Wallpaper Prototype.app`
-- `Applications` 快捷方式（拖拽安装）
-
-### 5.3 正式发布构建（Developer ID + Notarization）
+### 4.3 正式发布构建（Developer ID + Notarization）
 
 ```bash
 export DEVELOPER_ID_APP="Developer ID Application: Your Name (TEAMID)"
@@ -91,29 +67,63 @@ export NOTARY_PROFILE="your-notary-profile"
 zsh scripts/release_app.sh
 ```
 
-可选（跳过公证）：
+## 5. 在 GitHub Tag Release 上传安装包
 
-```bash
-SKIP_NOTARIZATION=1 zsh scripts/release_app.sh
+你可以上传这些产物到 Release Assets:
+
+- `dist/Wallpaper-Prototype-macOS.dmg`
+- `dist/Wallpaper-Prototype-macOS.zip`
+
+### 5.1 Web 页面操作（最直观）
+
+1. 先打包出 `.dmg` / `.zip`。
+2. 在 GitHub 打开仓库 `Releases` -> `Draft a new release`。
+3. 填写 tag（例如 `v0.1.0`）和标题。
+4. 在 `Attach binaries` 区域把 `dist/` 下文件拖进去。
+5. 在说明里写更新内容，点击 `Publish release`。
+
+推荐说明模板：
+
+```markdown
+## 更新内容
+- 新增/修复：...
+
+## 安装
+1. 下载 `Wallpaper-Prototype-macOS.dmg`
+2. 打开后拖拽到 Applications
+3. 首次打开若被拦截，在系统设置中允许
+
+## 已知问题
+- ...
 ```
 
-首次可先保存 notary 凭据：
+### 5.2 命令行操作（`gh`）
 
 ```bash
-xcrun notarytool store-credentials "your-notary-profile" \
-  --apple-id "you@example.com" \
-  --team-id "TEAMID" \
-  --password "app-specific-password"
+# 首次登录
+gh auth login
+
+# 创建并发布 release，同时上传安装包
+gh release create v0.1.0 \
+  dist/Wallpaper-Prototype-macOS.dmg \
+  dist/Wallpaper-Prototype-macOS.zip \
+  --title "v0.1.0" \
+  --notes "First public preview release"
 ```
 
-## 6. 常见问题
+如果 tag 已存在，只上传/补传资产：
 
-- `xcodebuild: error: SDK ... cannot be located`
-  - 多半是 `xcode-select` 没指到正确的 `/Applications/Xcode.app`。
-- `swift --version` 不是预期版本
-  - 重新执行 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`。
-- 打包后应用打不开
-  - 先在本机右键打开；对外分发请用 `scripts/release_app.sh` 做 Developer ID 签名与公证。
+```bash
+gh release upload v0.1.0 dist/Wallpaper-Prototype-macOS.dmg dist/Wallpaper-Prototype-macOS.zip --clobber
+```
+
+## 6. 主页 README 语言切换说明
+
+- GitHub 仓库首页默认只显示根目录的 `README.md`。
+- 不能做“真正的自动切换”多语言首页。
+- 常见做法是像本仓库这样在顶部放语言链接：
+  - 中文：`README.md`
+  - 英文：`README.en.md`
 
 ## 7. 仓库结构
 
@@ -142,12 +152,6 @@ git push -u origin main
 
 ```bash
 git add .
-git commit -m "docs: update setup and packaging guide"
+git commit -m "docs: update readme and release guide"
 git push
 ```
-
-## 9. 当前约束
-
-- 当前以 Swift Package 原型形式交付，不是 `.xcodeproj` 工程。
-- 桌面层窗口行为仍依赖目标机器和 macOS 版本实测。
-- `package_app.sh` 产物是本地 ad-hoc 签名，不等同于正式分发签名。
