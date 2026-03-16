@@ -1,0 +1,27 @@
+# Swift Package Manager / build outputs
+.build/
+Packages/
+Package.resolved
+*.xcodeproj
+*.xcworkspace
+
+# Apple / Xcode user data
+DerivedData/
+*.xcuserstate
+*.xcuserdata/
+
+# macOS / editor temp files
+.DS_Store
+*.swp
+*.swo
+
+# Local tooling state
+.golutra/
+
+# Local release artifacts
+dist/
+*.dmg
+*.zip
+
+# VS Code extension bundles downloaded locally
+*.vsix
