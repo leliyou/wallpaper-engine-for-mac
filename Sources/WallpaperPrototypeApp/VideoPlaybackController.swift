@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import QuartzCore
 
 @MainActor
 final class VideoPlaybackController {
@@ -7,9 +8,11 @@ final class VideoPlaybackController {
     var onPlaybackEnded: (() -> Void)?
 
     private var player: AVPlayer?
-    private var playerLooper: AVPlayerLooper?
     private var playerLayers: [AVPlayerLayer] = []
     private var playbackEndObserver: NSObjectProtocol?
+    private var readyForDisplayObservers: [NSKeyValueObservation] = []
+    private var pendingTransitionWorkItem: DispatchWorkItem?
+    private var activeTransitionID = UUID()
     private var isPaused = false
     private var isMuted = true
 
@@ -26,19 +29,22 @@ final class VideoPlaybackController {
         enableSeamlessLoop: Bool = false,
         startTime: CMTime? = nil
     ) throws {
-        stop()
+        let previousPlayer = player
+        let previousLayers = playerLayers
+
+        if let playbackEndObserver {
+            NotificationCenter.default.removeObserver(playbackEndObserver)
+            self.playbackEndObserver = nil
+        }
+        readyForDisplayObservers.forEach { $0.invalidate() }
+        readyForDisplayObservers.removeAll()
+        pendingTransitionWorkItem?.cancel()
+        pendingTransitionWorkItem = nil
 
         let asset = AVAsset(url: videoURL)
         let item = AVPlayerItem(asset: asset)
-        let player: AVPlayer
-
-        if enableSeamlessLoop {
-            let queuePlayer = AVQueuePlayer()
-            playerLooper = AVPlayerLooper(player: queuePlayer, templateItem: item)
-            player = queuePlayer
-        } else {
-            player = AVPlayer(playerItem: item)
-        }
+        let player = AVPlayer(playerItem: item)
+        player.actionAtItemEnd = enableSeamlessLoop ? .none : .pause
 
         var layers: [AVPlayerLayer] = []
         for hostView in hostViews {
@@ -46,19 +52,23 @@ final class VideoPlaybackController {
             layer.videoGravity = videoGravity
             layer.frame = hostView.bounds
             layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-            hostView.layer?.sublayers?.forEach { $0.removeFromSuperlayer() }
+            layer.opacity = previousLayers.isEmpty ? 1 : 0
             hostView.layer?.addSublayer(layer)
             layers.append(layer)
         }
 
-        if !enableSeamlessLoop {
-            playbackEndObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.onPlaybackEnded?()
+        playbackEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if enableSeamlessLoop {
+                    self.player?.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+                    self.player?.play()
+                } else {
+                    self.onPlaybackEnded?()
                 }
             }
         }
@@ -73,6 +83,43 @@ final class VideoPlaybackController {
         }
 
         player.play()
+
+        if !previousLayers.isEmpty {
+            let transitionID = UUID()
+            activeTransitionID = transitionID
+            let performTransition = { [weak self] in
+                guard let self else { return }
+                guard self.activeTransitionID == transitionID else { return }
+
+                CATransaction.begin()
+                CATransaction.setAnimationDuration(0.22)
+                CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+                CATransaction.setCompletionBlock {
+                    previousPlayer?.pause()
+                    previousLayers.forEach { $0.removeFromSuperlayer() }
+                    self.readyForDisplayObservers.forEach { $0.invalidate() }
+                    self.readyForDisplayObservers.removeAll()
+                    self.pendingTransitionWorkItem = nil
+                }
+
+                layers.forEach { $0.opacity = 1 }
+                previousLayers.forEach { $0.opacity = 0 }
+                CATransaction.commit()
+            }
+
+            if let firstLayer = layers.first {
+                let observer = firstLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { _, _ in
+                    if firstLayer.isReadyForDisplay {
+                        performTransition()
+                    }
+                }
+                readyForDisplayObservers.append(observer)
+            }
+
+            let fallbackWorkItem = DispatchWorkItem(block: performTransition)
+            pendingTransitionWorkItem = fallbackWorkItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: fallbackWorkItem)
+        }
 
         if player.status == .failed {
             onFailure?("播放失败：\(player.error?.localizedDescription ?? "未知 AVPlayer 错误")")
@@ -104,12 +151,16 @@ final class VideoPlaybackController {
             NotificationCenter.default.removeObserver(playbackEndObserver)
             self.playbackEndObserver = nil
         }
+        readyForDisplayObservers.forEach { $0.invalidate() }
+        readyForDisplayObservers.removeAll()
+        pendingTransitionWorkItem?.cancel()
+        pendingTransitionWorkItem = nil
+        activeTransitionID = UUID()
 
         player?.pause()
         playerLayers.forEach { $0.removeFromSuperlayer() }
 
         player = nil
-        playerLooper = nil
         playerLayers = []
         isPaused = false
     }

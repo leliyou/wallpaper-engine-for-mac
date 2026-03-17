@@ -68,9 +68,20 @@ final class DesktopWindowManager {
             window.level = NSWindow.Level(rawValue: layerStrategy.level)
             window.setFrame(screen.frame, display: true)
 
-            let contentView = NSView(frame: localContentRect(for: screen.frame))
-            contentView.wantsLayer = true
-            window.contentView = contentView
+            let localRect = localContentRect(for: screen.frame)
+            let contentView: NSView
+            if let existingContentView = window.contentView {
+                contentView = existingContentView
+                contentView.frame = localRect
+                if !contentView.wantsLayer {
+                    contentView.wantsLayer = true
+                }
+            } else {
+                let createdContentView = NSView(frame: localRect)
+                createdContentView.wantsLayer = true
+                window.contentView = createdContentView
+                contentView = createdContentView
+            }
             window.orderFrontRegardless()
             window.orderBack(nil)
 
